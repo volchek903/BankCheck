@@ -1,15 +1,16 @@
 from __future__ import annotations
 
+from app.formatters.html import bold, html_escape, notice_block, source_line
 from app.models import DepositOffer, DepositsReport
 
 
 def format_deposits_report(report: DepositsReport) -> str:
-    lines = ["🏦 Топ вкладов", ""]
+    lines = [bold("🏦 Топ вкладов"), ""]
     source = report.source or "источник не указан"
 
     if report.unavailable_reason:
-        lines.append(f"Раздел временно недоступен: {report.unavailable_reason}")
-        lines.extend(["", f"Источник: {source}"])
+        lines.append(f"{bold('Раздел временно недоступен:')} {html_escape(report.unavailable_reason)}")
+        lines.extend(["", source_line(source)])
         return "\n".join(lines)
 
     bucket_order = [
@@ -31,32 +32,30 @@ def format_deposits_report(report: DepositsReport) -> str:
         if not offers:
             continue
         bucket_title = _bucket_title(currency, revocable)
-        lines.append(f"{bucket_title}:")
+        lines.append(bold(bucket_title))
         for index, offer in enumerate(offers, start=1):
-            lines.append(f"{index}. {_format_offer(offer)}")
-        lines.append("")
+            lines.extend(_format_offer(index, offer))
+            lines.append("")
 
     if report.short_term:
-        lines.append("Короткий срок:")
+        lines.append(bold("Короткий срок"))
         for index, offer in enumerate(report.short_term, start=1):
-            lines.append(f"{index}. {_format_offer(offer)}")
-        lines.append("")
+            lines.extend(_format_offer(index, offer))
+            lines.append("")
 
     if report.long_term:
-        lines.append("Длинный срок:")
+        lines.append(bold("Длинный срок"))
         for index, offer in enumerate(report.long_term, start=1):
-            lines.append(f"{index}. {_format_offer(offer)}")
-        lines.append("")
+            lines.extend(_format_offer(index, offer))
+            lines.append("")
 
     if report.alerts:
-        lines.extend(report.alerts[:6])
-        lines.append("")
+        lines.extend(notice_block("Важно", report.alerts, limit=6))
 
     if report.notes:
-        lines.extend(report.notes[:3])
-        lines.append("")
+        lines.extend(notice_block("Примечания", report.notes, limit=3))
 
-    lines.append(f"Источник: {source}")
+    lines.append(source_line(source))
     return "\n".join(lines)
 
 
@@ -72,6 +71,10 @@ def _bucket_title(currency: str, revocable: bool) -> str:
     return f"{prefix} — {suffix}"
 
 
-def _format_offer(offer: DepositOffer) -> str:
+def _format_offer(index: int, offer: DepositOffer) -> list[str]:
     term = offer.term_text or "срок не указан"
-    return f"{offer.bank} — «{offer.product}», {offer.rate_text}, {term}"
+    return [
+        f"  {bold(f'{index}.')} {bold(offer.bank)} — «{bold(offer.product)}»",
+        f"     • {bold('Ставка:')} {bold(offer.rate_text)}",
+        f"     • {bold('Срок:')} {html_escape(term)}",
+    ]

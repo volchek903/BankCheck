@@ -1,16 +1,17 @@
 from __future__ import annotations
 
-from app.models import CurrencyReport
+from app.formatters.html import bold, html_escape, notice_block, source_line
+from app.models import CurrencyDirection, CurrencyReport
 
 
 def format_currency_report(report: CurrencyReport) -> str:
     time_label = report.generated_at.strftime("%H:%M")
-    lines = [f"💱 Курсы валют — {time_label}", ""]
+    lines = [bold(f"💱 Курсы валют — {time_label}"), ""]
     source = report.source or "источник не указан"
 
     if report.unavailable_reason:
-        lines.append(f"Раздел временно недоступен: {report.unavailable_reason}")
-        lines.extend(["", f"Источник: {source}"])
+        lines.append(f"{bold('Раздел временно недоступен:')} {html_escape(report.unavailable_reason)}")
+        lines.extend(["", source_line(source)])
         return "\n".join(lines)
 
     labels = {
@@ -22,20 +23,21 @@ def format_currency_report(report: CurrencyReport) -> str:
     for code in ("USD", "EUR", "RUB"):
         pair = report.pairs.get(code)
         title, buy_label, sell_label = labels[code]
-        lines.append(title)
-        if pair and pair.buy:
-            lines.append(f"{buy_label}: {pair.buy.bank} — {pair.buy.rate:.4f} BYN")
-        else:
-            lines.append(f"{buy_label}: нет данных")
-        if pair and pair.sell:
-            lines.append(f"{sell_label}: {pair.sell.bank} — {pair.sell.rate:.4f} BYN")
-        else:
-            lines.append(f"{sell_label}: нет данных")
+        lines.append(bold(title))
+        lines.append(_format_direction(buy_label, pair.buy if pair else None))
+        lines.append(_format_direction(sell_label, pair.sell if pair else None))
         lines.append("")
 
     if report.alerts:
-        lines.extend(report.alerts[:6])
-        lines.append("")
+        lines.extend(notice_block("Важно", report.alerts, limit=6))
 
-    lines.append(f"Источник: {source}")
+    lines.append(source_line(source))
     return "\n".join(lines)
+
+
+def _format_direction(label: str, direction: CurrencyDirection | None) -> str:
+    if not direction:
+        return f"  {bold(label)}: нет данных"
+
+    rate = f"{direction.rate:.4f} BYN"
+    return f"  {bold(label)}: {bold(direction.bank)} — {bold(rate)}"

@@ -14,6 +14,7 @@ from app.config import Settings
 from app.formatters.credits import format_credits_report
 from app.formatters.currency import format_currency_report
 from app.formatters.deposits import format_deposits_report
+from app.formatters.html import bold, html_escape
 from app.formatters.leasing import format_leasing_report
 from app.formatters.summary import format_summary_report
 from app.models import AppState, CreditsReport, CurrencyReport, DepositsReport, LeasingReport
@@ -229,7 +230,7 @@ class FinanceBotApp:
     async def _send_text(self, chat_id: int, text: str) -> None:
         for chunk in _split_message(text):
             if chunk.strip():
-                await self.bot.send_message(chat_id=chat_id, text=chunk)
+                await self.bot.send_message(chat_id=chat_id, text=chunk, parse_mode="HTML")
 
     def _register_handlers(self) -> None:
         self.dispatcher.message.register(self._handle_start, Command("start"))
@@ -247,23 +248,26 @@ class FinanceBotApp:
             return
         hours = ", ".join(f"{hour:02d}:00" for hour in self.settings.schedule_hours)
         await message.answer(
-            "Бот запущен.\n"
-            f"Расписание: {hours} ({self.settings.timezone}).\n"
-            "Команда /now отправляет отчеты сразу."
+            f"{bold('Бот запущен.')}\n\n"
+            f"{bold('Расписание:')} {html_escape(hours)} ({html_escape(self.settings.timezone)}).\n\n"
+            f"Команда {bold('/now')} отправляет отчеты сразу.",
+            parse_mode="HTML",
         )
 
     async def _handle_help(self, message: Message) -> None:
         if not await self._ensure_access(message):
             return
         await message.answer(
-            "/start — проверить, что бот работает\n"
-            "/now — отправить все отчеты прямо сейчас\n"
-            "/currency — только курсы валют\n"
-            "/deposits — только вклады\n"
-            "/credits — только кредиты\n"
-            "/leasing — только лизинг\n"
-            "/summary — краткая сводка\n"
-            "/help — список команд"
+            f"{bold('Команды')}\n\n"
+            f"  {bold('/start')} — проверить, что бот работает\n"
+            f"  {bold('/now')} — отправить все отчеты прямо сейчас\n"
+            f"  {bold('/currency')} — только курсы валют\n"
+            f"  {bold('/deposits')} — только вклады\n"
+            f"  {bold('/credits')} — только кредиты\n"
+            f"  {bold('/leasing')} — только лизинг\n"
+            f"  {bold('/summary')} — краткая сводка\n"
+            f"  {bold('/help')} — список команд",
+            parse_mode="HTML",
         )
 
     async def _handle_now(self, message: Message) -> None:
