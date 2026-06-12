@@ -9,6 +9,7 @@ from app.models import (
     AppState,
     CurrencyDirection,
     CurrencyPairBest,
+    CurrencyRateRow,
     CurrencyReport,
     CurrencyStateEntry,
 )
@@ -54,29 +55,10 @@ class CurrencyService:
             ("EUR", "buy_eur", "sell_eur"),
             ("RUB", "buy_rub", "sell_rub"),
         ):
-            best_buy_row = min(
-                (row for row in rows if getattr(row, sell_attr) is not None),
-                default=None,
-                key=lambda row: getattr(row, sell_attr),
-            )
-            best_sell_row = max(
-                (row for row in rows if getattr(row, buy_attr) is not None),
-                default=None,
-                key=lambda row: getattr(row, buy_attr),
-            )
-
             pair = CurrencyPairBest(
                 code=code,
-                buy=(
-                    CurrencyDirection(bank=best_buy_row.bank, rate=getattr(best_buy_row, sell_attr))
-                    if best_buy_row
-                    else None
-                ),
-                sell=(
-                    CurrencyDirection(bank=best_sell_row.bank, rate=getattr(best_sell_row, buy_attr))
-                    if best_sell_row
-                    else None
-                ),
+                buy=self._best_direction(rows, sell_attr, pick_lowest=True),
+                sell=self._best_direction(rows, buy_attr, pick_lowest=False),
             )
             pairs[code] = pair
 
@@ -136,3 +118,21 @@ class CurrencyService:
         if old == 0:
             return 0.0
         return ((new - old) / old) * 100
+
+    @staticmethod
+    def _best_direction(
+        rows: list[CurrencyRateRow],
+        rate_attr: str,
+        pick_lowest: bool,
+    ) -> CurrencyDirection | None:
+        candidates = [(row, getattr(row, rate_attr)) for row in rows if getattr(row, rate_attr) is not None]
+        if not candidates:
+            return None
+
+        rates = [rate for _, rate in candidates]
+        best_rate = min(rates) if pick_lowest else max(rates)
+        banks: list[str] = []
+        for row, rate in candidates:
+            if round(rate, 4) == round(best_rate, 4) and row.bank not in banks:
+                banks.append(row.bank)
+        return CurrencyDirection(bank=banks[0], banks=banks, rate=best_rate)

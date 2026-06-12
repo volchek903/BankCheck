@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -32,6 +32,8 @@ from app.storage.storage import JsonStateStorage
 
 logger = logging.getLogger(__name__)
 
+SCHEDULE_DISPATCH_WINDOW_SECONDS = 5 * 60
+
 
 class FinanceBotApp:
     def __init__(self, settings: Settings) -> None:
@@ -39,7 +41,12 @@ class FinanceBotApp:
         self.timezone = ZoneInfo(settings.timezone)
         self.bot = Bot(settings.bot_token)
         self.dispatcher = Dispatcher()
-        self.storage = JsonStateStorage(Path(__file__).resolve().parent / "storage" / "state.json")
+        state_file = (
+            Path(settings.state_file)
+            if settings.state_file
+            else Path(__file__).resolve().parent / "storage" / "state.json"
+        )
+        self.storage = JsonStateStorage(state_file)
 
         self.currency_provider = SelectCurrencyProvider(settings)
         self.deposits_provider = Banki24DepositsProvider(settings)
@@ -84,13 +91,50 @@ class FinanceBotApp:
         await self.bot.session.close()
 
     async def send_scheduled_reports(self) -> None:
-        logger.info("Sending scheduled reports")
-        await self.send_all_reports(chat_id=self.settings.telegram_user_id)
+        now = datetime.now(self.timezone)
+        scheduled_slot = _schedule_slot_for(
+            now,
+            self.settings.schedule_hours,
+            SCHEDULE_DISPATCH_WINDOW_SECONDS,
+        )
+        if not scheduled_slot:
+            logger.warning(
+                "Skipping scheduled reports outside schedule window at %s; schedule_hours=%s",
+                now.isoformat(timespec="seconds"),
+                self.settings.schedule_hours,
+            )
+            return
 
-    async def send_all_reports(self, chat_id: int | None = None) -> None:
-        target_chat_id = chat_id or self.settings.telegram_user_id
-        logger.info("Preparing reports for chat_id=%s", target_chat_id)
         state = await self.storage.load()
+        if state.last_scheduled_slot == scheduled_slot:
+            logger.info("Skipping already delivered scheduled reports for slot=%s", scheduled_slot)
+            return
+
+        logger.info("Sending scheduled reports for slot=%s", scheduled_slot)
+        await self.send_all_reports(
+            chat_id=self.settings.telegram_user_id,
+            source="scheduler",
+            state=state,
+            scheduled_slot=scheduled_slot,
+        )
+
+    async def send_all_reports(
+        self,
+        chat_id: int | None = None,
+        *,
+        source: str = "command",
+        state: AppState | None = None,
+        scheduled_slot: str | None = None,
+    ) -> None:
+        target_chat_id = chat_id or self.settings.telegram_user_id
+        logger.info(
+            "Preparing reports source=%s chat_id=%s scheduled_slot=%s",
+            source,
+            target_chat_id,
+            scheduled_slot,
+        )
+        if state is None:
+            state = await self.storage.load()
         reports = await self._build_core_reports(state)
 
         messages: list[str] = []
@@ -115,8 +159,21 @@ class FinanceBotApp:
         for message in messages:
             await self._send_text(target_chat_id, message)
 
-        await self._persist_state(state, currency, deposits, credits, leasing)
-        logger.info("Report delivery finished for chat_id=%s", target_chat_id)
+        await self._persist_state(
+            state,
+            currency,
+            deposits,
+            credits,
+            leasing,
+            scheduled_slot=scheduled_slot,
+        )
+        logger.info(
+            "Report delivery finished source=%s chat_id=%s scheduled_slot=%s messages=%s",
+            source,
+            target_chat_id,
+            scheduled_slot,
+            len(messages),
+        )
 
     async def send_currency_report(self, chat_id: int) -> None:
         if not self.settings.enable_currency:
@@ -212,9 +269,13 @@ class FinanceBotApp:
         deposits: DepositsReport | None,
         credits: CreditsReport | None,
         leasing: LeasingReport | None,
+        *,
+        scheduled_slot: str | None = None,
     ) -> None:
         next_state = state.model_copy(deep=True)
         next_state.updated_at = datetime.now(self.timezone)
+        if scheduled_slot:
+            next_state.last_scheduled_slot = scheduled_slot
 
         if currency and currency.snapshot:
             next_state.currency = currency.snapshot
@@ -273,31 +334,37 @@ class FinanceBotApp:
     async def _handle_now(self, message: Message) -> None:
         if not await self._ensure_access(message):
             return
-        await self.send_all_reports(chat_id=message.chat.id)
+        self._log_manual_command(message, "/now")
+        await self.send_all_reports(chat_id=message.chat.id, source="command:/now")
 
     async def _handle_currency(self, message: Message) -> None:
         if not await self._ensure_access(message):
             return
+        self._log_manual_command(message, "/currency")
         await self.send_currency_report(message.chat.id)
 
     async def _handle_deposits(self, message: Message) -> None:
         if not await self._ensure_access(message):
             return
+        self._log_manual_command(message, "/deposits")
         await self.send_deposits_report(message.chat.id)
 
     async def _handle_credits(self, message: Message) -> None:
         if not await self._ensure_access(message):
             return
+        self._log_manual_command(message, "/credits")
         await self.send_credits_report(message.chat.id)
 
     async def _handle_leasing(self, message: Message) -> None:
         if not await self._ensure_access(message):
             return
+        self._log_manual_command(message, "/leasing")
         await self.send_leasing_report(message.chat.id)
 
     async def _handle_summary(self, message: Message) -> None:
         if not await self._ensure_access(message):
             return
+        self._log_manual_command(message, "/summary")
         await self.send_summary_report(message.chat.id)
 
     async def _handle_fallback(self, message: Message) -> None:
@@ -316,6 +383,16 @@ class FinanceBotApp:
         if not message.from_user or message.from_user.id != self.settings.telegram_user_id:
             return False
         return message.chat.type == "private" and message.chat.id == self.settings.telegram_user_id
+
+    @staticmethod
+    def _log_manual_command(message: Message, command: str) -> None:
+        user_id = message.from_user.id if message.from_user else None
+        logger.info(
+            "Manual command %s accepted from user_id=%s chat_id=%s",
+            command,
+            user_id,
+            message.chat.id,
+        )
 
 
 def _split_message(text: str, limit: int = 4000) -> list[str]:
@@ -344,3 +421,25 @@ def _split_message(text: str, limit: int = 4000) -> list[str]:
         for offset in range(0, len(part), limit):
             normalized.append(part[offset : offset + limit])
     return normalized
+
+
+def _schedule_slot_for(
+    now: datetime,
+    schedule_hours: tuple[int, ...],
+    window_seconds: int,
+) -> str | None:
+    candidates: list[datetime] = []
+    for day_offset in (0, -1):
+        base = now + timedelta(days=day_offset)
+        for hour in schedule_hours:
+            candidate = base.replace(hour=hour, minute=0, second=0, microsecond=0)
+            if candidate <= now:
+                candidates.append(candidate)
+
+    if not candidates:
+        return None
+
+    scheduled_at = max(candidates)
+    if now - scheduled_at > timedelta(seconds=window_seconds):
+        return None
+    return scheduled_at.isoformat(timespec="minutes")

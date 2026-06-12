@@ -24,8 +24,8 @@ def format_currency_report(report: CurrencyReport) -> str:
         pair = report.pairs.get(code)
         title, buy_label, sell_label = labels[code]
         lines.append(bold(title))
-        lines.append(_format_direction(buy_label, pair.buy if pair else None))
-        lines.append(_format_direction(sell_label, pair.sell if pair else None))
+        lines.extend(_format_direction(buy_label, pair.buy if pair else None))
+        lines.extend(_format_direction(sell_label, pair.sell if pair else None))
         lines.append("")
 
     if report.alerts:
@@ -35,9 +35,15 @@ def format_currency_report(report: CurrencyReport) -> str:
     return "\n".join(lines)
 
 
-def _format_direction(label: str, direction: CurrencyDirection | None) -> str:
+def _format_direction(label: str, direction: CurrencyDirection | None) -> list[str]:
     if not direction:
-        return f"  {bold(label)}: нет данных"
+        return [f"  {bold(label)}: нет данных"]
 
     rate = f"{direction.rate:.4f} BYN"
-    return f"  {bold(label)}: {bold(direction.bank)} — {bold(rate)}"
+    banks = direction.banks or [direction.bank]
+    same_rate_banks = [bank for bank in banks[1:] if bank != banks[0]]
+    same_rate_note = ""
+    if same_rate_banks:
+        same_rate_note = f" ({bold('такой же курс:')} {bold(', '.join(same_rate_banks))})"
+
+    return [f"  {bold(label)}: {bold(banks[0])} — {bold(rate)}{same_rate_note}"]

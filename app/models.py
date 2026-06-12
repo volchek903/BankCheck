@@ -18,6 +18,7 @@ class CurrencyRateRow(BaseModel):
 
 class CurrencyDirection(BaseModel):
     bank: str
+    banks: list[str] = Field(default_factory=list)
     rate: float
 
 
@@ -143,6 +144,7 @@ class SummaryReport(BaseModel):
 
 class AppState(BaseModel):
     updated_at: datetime | None = None
+    last_scheduled_slot: str | None = None
     currency: dict[str, CurrencyStateEntry] = Field(default_factory=dict)
     deposits: dict[str, LeaderSnapshot] = Field(default_factory=dict)
     credits: dict[str, LeaderSnapshot] = Field(default_factory=dict)

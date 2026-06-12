@@ -4,7 +4,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from app.config import Settings
-from app.models import CreditsReport, CurrencyReport, DepositsReport, LeasingReport, SummaryReport
+from app.models import CreditsReport, CurrencyDirection, CurrencyReport, DepositsReport, LeasingReport, SummaryReport
 
 
 class SummaryService:
@@ -29,9 +29,11 @@ class SummaryService:
                 if not pair or not pair.buy or not pair.sell:
                     continue
                 unit = "100 RUB" if code == "RUB" else code
+                buy_banks = self._bank_label(pair.buy)
+                sell_banks = self._bank_label(pair.sell)
                 lines.append(
-                    f"{unit}: купить у {pair.buy.bank} по {pair.buy.rate:.4f}, "
-                    f"продать в {pair.sell.bank} по {pair.sell.rate:.4f}."
+                    f"{unit}: купить у {buy_banks} по {pair.buy.rate:.4f}, "
+                    f"продать в {sell_banks} по {pair.sell.rate:.4f}."
                 )
             lines.append("")
 
@@ -101,3 +103,8 @@ class SummaryService:
                 if source and source not in sources:
                     sources.append(source)
         return ", ".join(sources) if sources else "источник не указан"
+
+    @staticmethod
+    def _bank_label(direction: CurrencyDirection) -> str:
+        banks = direction.banks or [direction.bank]
+        return ", ".join(banks)

@@ -17,6 +17,7 @@ class Settings(BaseModel):
     enable_credits: bool = Field(default=True, alias="ENABLE_CREDITS")
     enable_leasing: bool = Field(default=True, alias="ENABLE_LEASING")
     enable_summary: bool = Field(default=True, alias="ENABLE_SUMMARY")
+    state_file: str = Field(default="", alias="STATE_FILE")
     request_timeout_seconds: float = 15.0
     request_retries: int = 2
     currency_change_threshold_pct: float = 0.5
@@ -34,6 +35,7 @@ def load_settings() -> Settings:
         "ENABLE_CREDITS": os.getenv("ENABLE_CREDITS", "true"),
         "ENABLE_LEASING": os.getenv("ENABLE_LEASING", "true"),
         "ENABLE_SUMMARY": os.getenv("ENABLE_SUMMARY", "true"),
+        "STATE_FILE": os.getenv("STATE_FILE", ""),
     }
     try:
         return Settings.model_validate(raw)

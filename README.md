@@ -110,6 +110,36 @@ python -m app.main --once
 
 Это удобно как тестовый режим и как ручной прогон после деплоя.
 
+## Запуск в Docker
+
+1. Скопируйте `.env.example` в `.env` и заполните `BOT_TOKEN` и `TELEGRAM_USER_ID`.
+
+2. Соберите и запустите контейнер:
+
+```bash
+docker compose up -d --build
+```
+
+3. Посмотрите логи:
+
+```bash
+docker compose logs -f bankcheck-bot
+```
+
+Одноразовая отправка отчетов через Docker:
+
+```bash
+docker compose run --rm bankcheck-bot python -m app.main --once
+```
+
+Остановить контейнер:
+
+```bash
+docker compose down
+```
+
+В Docker состояние бота хранится в volume `bankcheck-data` по пути `/data/state.json`, поэтому оно переживает пересоздание контейнера.
+
 ## Команды
 
 - `/start` — проверить, что бот работает

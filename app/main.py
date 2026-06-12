@@ -24,7 +24,7 @@ async def async_main(run_once: bool) -> None:
     try:
         if run_once:
             logging.getLogger(__name__).info("Running one-shot report delivery")
-            await app.send_scheduled_reports()
+            await app.send_all_reports(source="once")
             return
 
         await app.set_commands()

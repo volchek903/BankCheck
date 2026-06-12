@@ -3,7 +3,7 @@ from __future__ import annotations
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from app.bot import FinanceBotApp
+from app.bot import FinanceBotApp, SCHEDULE_DISPATCH_WINDOW_SECONDS
 
 
 def create_scheduler(app: FinanceBotApp) -> AsyncIOScheduler:
@@ -16,5 +16,6 @@ def create_scheduler(app: FinanceBotApp) -> AsyncIOScheduler:
             replace_existing=True,
             max_instances=1,
             coalesce=True,
+            misfire_grace_time=SCHEDULE_DISPATCH_WINDOW_SECONDS,
         )
     return scheduler
